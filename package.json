@@ -1,0 +1,15 @@
+{
+  "name": "whatsapp-server",
+  "version": "1.0.0",
+  "description": "Server untuk WhatsApp Web API",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "qrcode": "^1.5.3",
+    "socket.io": "^4.7.5",
+    "whatsapp-web.js": "^1.23.0"
+  }
+}
