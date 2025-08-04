@@ -2,46 +2,85 @@ const express = require('express');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
 const qrcode = require('qrcode');
-const { Client, LocalAuth } = require('whatsapp-web.js');
+const { Client, RemoteAuth } = require('whatsapp-web.js');
+const { createClient } = require('@supabase/supabase-js');
 
+// --- Konfigurasi Supabase ---
+// Atur ini di Environment Variables pada Render
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+
+// --- Strategi Penyimpanan Sesi di Supabase ---
+class SupabaseAuthStore {
+  async getSession() {
+    const { data, error } = await supabase
+      .from('whatsapp_sessions')
+      .select('session_data')
+      .eq('id', 1)
+      .single();
+
+    if (error && error.code !== 'PGRST116') { // Abaikan error jika baris tidak ditemukan
+      throw new Error(error.message);
+    }
+    return data?.session_data || null;
+  }
+
+  async saveSession(session) {
+    const { error } = await supabase
+      .from('whatsapp_sessions')
+      .update({ session_data: session })
+      .eq('id', 1);
+    
+    if (error) {
+      throw new Error(error.message);
+    }
+  }
+
+  async removeSession() {
+    const { error } = await supabase
+      .from('whatsapp_sessions')
+      .update({ session_data: null })
+      .eq('id', 1);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+  }
+}
+
+const store = new SupabaseAuthStore();
+const authStrategy = new RemoteAuth({
+  store: store,
+  backupSyncIntervalMs: 300000 // Simpan sesi setiap 5 menit
+});
+
+
+// --- Inisialisasi Server dan WhatsApp Client ---
 const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
-  cors: {
-    origin: "*", // Izinkan koneksi dari mana saja
-  }
+  cors: { origin: "*" }
 });
 
-// Gunakan port dari environment variable, atau 3000 jika tidak ada
 const PORT = process.env.PORT || 3000;
 
 app.get('/', (req, res) => {
-  res.send('<h1>WhatsApp Server Aktif!</h1>');
+  res.send('<h1>WhatsApp Server dengan Supabase Auth Aktif!</h1>');
 });
 
 const client = new Client({
-  authStrategy: new LocalAuth({
-    // Path ini penting, akan kita atur di Render
-    dataPath: '/data/wwebjs_auth' 
-  }),
-  // Konfigurasi ini WAJIB untuk server Linux seperti Render
+  authStrategy: authStrategy,
   puppeteer: {
     headless: true,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-accelerated-2d-canvas',
-      '--no-first-run',
-      '--no-zygote',
-      '--single-process', // <- ini mungkin membantu di lingkungan memori rendah
-      '--disable-gpu'
-    ],
+    args: ['--no-sandbox', '--disable-setuid-sandbox']
   },
 });
 
 client.initialize();
 
+// ... (sisa kode Socket.IO Anda tetap sama)
 io.on('connection', (socket) => {
   console.log('User terhubung:', socket.id);
 
